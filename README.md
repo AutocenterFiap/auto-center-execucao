@@ -108,20 +108,38 @@ make verify   # testes + gate de cobertura (mínimo 80%)
 
 ## CI/CD e Kubernetes
 
-- Pipeline independente (build → testes → qualidade/Sonar → imagem → deploy K8s).
-- Branch `main` protegida (PR obrigatório + checagens).
-- Manifestos Kubernetes e deploy automatizado em `k8s/` (a adicionar).
+Pipelines independentes em GitHub Actions (`.github/workflows/`):
+
+- **`ci.yml`** — em PRs e pushes: build → testes (unitários + integração/BDD com Testcontainers) → qualidade (SonarQube). É o check obrigatório para merge na `main`.
+- **`cd.yml`** — em push na `main`: build e push da imagem para o **GHCR** → deploy no Kubernetes (`kubectl apply -k k8s/`), criando o Secret a partir dos GitHub Secrets. O deploy é pulado se `KUBE_CONFIG` não estiver configurado.
+
+Manifestos Kubernetes e instruções de deploy em [`k8s/`](k8s/README.md).
+
+### Proteção da branch `main`
+
+Configurar em **Settings → Branches → Branch protection rules** para `main`:
+- Require a pull request before merging (≥1 aprovação);
+- Require status checks to pass → selecionar **`🔨 Build, Testes e Qualidade`** (job do `ci.yml`);
+- Require branches to be up to date before merging.
+
+### Secrets usados nos workflows
+
+| Secret | Uso |
+|--------|-----|
+| `SONAR_TOKEN`, `SONAR_HOST_URL` | Análise SonarQube no CI (opcional) |
+| `KUBE_CONFIG` | kubeconfig do cluster alvo (deploy) |
+| `MONGO_INITDB_ROOT_USERNAME`, `MONGO_INITDB_ROOT_PASSWORD`, `MONGODB_URI` | Credenciais do MongoDB (deploy) |
 
 ---
 
 ## Status do desenvolvimento
 
 - [x] Bootstrap do projeto (estrutura, build, config, observabilidade)
-- [ ] Domínio (Execucao, EventoOperacional, transições)
-- [ ] Casos de uso e ports
-- [ ] Persistência MongoDB
-- [ ] Consumer `pagamento.confirmado` + producers de eventos
-- [ ] Endpoints REST (fila, avanço de etapas, consulta)
-- [ ] Testes unitários + BDD + cobertura ≥80%
-- [ ] Dockerfile + manifestos Kubernetes
-- [ ] Pipeline CI/CD + Sonar
+- [x] Domínio (Execucao, EventoOperacional, transições)
+- [x] Casos de uso e ports
+- [x] Persistência MongoDB
+- [x] Consumer `pagamento.confirmado` + producers de eventos
+- [x] Endpoints REST (fila, avanço de etapas, consulta)
+- [x] Testes unitários + BDD + cobertura ≥80% (atual: 96,3%)
+- [x] Dockerfile + manifestos Kubernetes
+- [x] Pipeline CI/CD + Sonar
