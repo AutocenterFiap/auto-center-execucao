@@ -1,0 +1,79 @@
+spring:
+  application:
+    name: auto-center-execucao
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/execucao}
+      auto-index-creation: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: execucao-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "br.com.autocenterfiap.*"
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+server:
+  port: ${SERVER_PORT:8098}
+
+# ========================================
+# Topicos Kafka do ecossistema (Fase 4)
+# ========================================
+execucao:
+  kafka:
+    topics:
+      # consumido
+      pagamento-confirmado: pagamento.confirmado
+      # publicados
+      execucao-iniciada: execucao.iniciada
+      execucao-finalizada: execucao.finalizada
+      execucao-falhou: execucao.falhou
+
+# ========================================
+# Swagger / OpenAPI
+# ========================================
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+    tagsSorter: alpha
+
+# ========================================
+# Actuator (Health & Prometheus)
+# ========================================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/execucao
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
