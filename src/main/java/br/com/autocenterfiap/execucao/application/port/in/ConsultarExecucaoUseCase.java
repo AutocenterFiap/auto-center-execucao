@@ -9,9 +9,7 @@ import java.util.List;
  */
 public interface ConsultarExecucaoUseCase {
 
-	Execucao buscarPorId(String execucaoId);
-
-	Execucao buscarPorOsId(String osId);
+	Execucao buscarPorOsId(Long osId);
 
 	List<Execucao> listarFila();
 }

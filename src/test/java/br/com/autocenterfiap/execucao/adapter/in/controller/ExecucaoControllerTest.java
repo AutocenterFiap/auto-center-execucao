@@ -4,8 +4,9 @@ import br.com.autocenterfiap.execucao.application.exception.ExecucaoNaoEncontrad
 import br.com.autocenterfiap.execucao.application.port.in.ConsultarExecucaoUseCase;
 import br.com.autocenterfiap.execucao.application.port.in.GerenciarExecucaoUseCase;
 import br.com.autocenterfiap.execucao.domain.entity.Execucao;
-import br.com.autocenterfiap.execucao.domain.enums.StatusExecucao;
+import br.com.autocenterfiap.execucao.domain.entity.Itens;
 import br.com.autocenterfiap.execucao.domain.exception.TransicaoInvalidaException;
+import br.com.autocenterfiap.execucao.domain.enums.StatusExecucao;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -13,8 +14,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.time.Instant;
-import java.util.ArrayList;
+import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -34,52 +34,61 @@ class ExecucaoControllerTest {
 	@MockBean
 	ConsultarExecucaoUseCase consultar;
 
-	private Execucao execucaoEm(StatusExecucao status) {
-		return Execucao.reconstituir("e1", "os-1", status, 1, null,
-				Instant.now(), Instant.now(), null, new ArrayList<>());
+	private Execucao naFila() {
+		return Execucao.criar(123L, 1001L, 42L, 77L, "Barulho", "corr-1", 1);
+	}
+
+	private Execucao finalizada() {
+		Execucao e = naFila();
+		e.iniciarDiagnostico(3L);
+		e.concluirDiagnostico(new Itens(List.of(), List.of()));
+		e.iniciarReparo(null);
+		e.finalizar();
+		return e;
 	}
 
 	@Test
-	void porIdDeveRetornar200() throws Exception {
-		when(consultar.buscarPorId("e1")).thenReturn(execucaoEm(StatusExecucao.NA_FILA));
+	void porOsIdDeveRetornar200() throws Exception {
+		when(consultar.buscarPorOsId(123L)).thenReturn(naFila());
 
-		mockMvc.perform(get("/execucoes/e1"))
+		mockMvc.perform(get("/execucoes/os/123"))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.id").value("e1"))
+				.andExpect(jsonPath("$.osId").value(123))
 				.andExpect(jsonPath("$.status").value("NA_FILA"));
 	}
 
 	@Test
-	void porIdInexistenteDeveRetornar404() throws Exception {
-		when(consultar.buscarPorId("x")).thenThrow(new ExecucaoNaoEncontradaException("id", "x"));
+	void porOsIdInexistenteDeveRetornar404() throws Exception {
+		when(consultar.buscarPorOsId(999L)).thenThrow(new ExecucaoNaoEncontradaException(999L));
 
-		mockMvc.perform(get("/execucoes/x"))
+		mockMvc.perform(get("/execucoes/os/999"))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.status").value(404));
 	}
 
 	@Test
 	void finalizarDeveRetornar200() throws Exception {
-		when(gerenciar.finalizar(eq("e1"), any())).thenReturn(execucaoEm(StatusExecucao.FINALIZADA));
+		when(gerenciar.finalizar(123L)).thenReturn(finalizada());
 
-		mockMvc.perform(post("/execucoes/e1/finalizacao"))
+		mockMvc.perform(post("/execucoes/123/finalizacao"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.status").value("FINALIZADA"));
 	}
 
 	@Test
-	void transicaoInvalidaDeveRetornar409() throws Exception {
-		when(gerenciar.iniciarReparo(eq("e1"), any()))
-				.thenThrow(new TransicaoInvalidaException(StatusExecucao.NA_FILA, StatusExecucao.EM_EXECUCAO));
+	void concluirDiagnosticoComTransicaoInvalidaDeveRetornar409() throws Exception {
+		when(gerenciar.concluirDiagnostico(eq(123L), any()))
+				.thenThrow(new TransicaoInvalidaException(StatusExecucao.NA_FILA, StatusExecucao.DIAGNOSTICO_CONCLUIDO));
 
-		mockMvc.perform(post("/execucoes/e1/reparo"))
-				.andExpect(status().isConflict())
-				.andExpect(jsonPath("$.status").value(409));
+		mockMvc.perform(post("/execucoes/123/diagnostico")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"servicos\":[{\"servicoId\":1,\"valor\":120.00}],\"produtos\":[]}"))
+				.andExpect(status().isConflict());
 	}
 
 	@Test
 	void falhaSemMotivoDeveRetornar400() throws Exception {
-		mockMvc.perform(post("/execucoes/e1/falha")
+		mockMvc.perform(post("/execucoes/123/falha")
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("{\"motivo\":\"\"}"))
 				.andExpect(status().isBadRequest());

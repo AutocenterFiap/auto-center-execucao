@@ -1,8 +1,8 @@
 package br.com.autocenterfiap.execucao.adapter.in.controller;
 
-import br.com.autocenterfiap.execucao.adapter.in.dto.EtapaRequest;
 import br.com.autocenterfiap.execucao.adapter.in.dto.ExecucaoResponse;
 import br.com.autocenterfiap.execucao.adapter.in.dto.FalhaRequest;
+import br.com.autocenterfiap.execucao.adapter.in.dto.ItensRequest;
 import br.com.autocenterfiap.execucao.application.port.in.ConsultarExecucaoUseCase;
 import br.com.autocenterfiap.execucao.application.port.in.GerenciarExecucaoUseCase;
 import io.swagger.v3.oas.annotations.Operation;
@@ -18,7 +18,8 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * API REST da oficina para acompanhar a fila e avancar as etapas de execucao.
+ * API REST da oficina: acompanhar a fila e registrar o resultado do diagnostico, a
+ * finalizacao e a falha. O inicio do diagnostico e do reparo sao automaticos (via Kafka).
  */
 @RestController
 @RequestMapping("/execucoes")
@@ -33,15 +34,9 @@ public class ExecucaoController {
 		this.consultar = consultar;
 	}
 
-	@GetMapping("/{id}")
-	@Operation(summary = "Consulta uma execucao pelo id")
-	public ExecucaoResponse porId(@PathVariable String id) {
-		return ExecucaoResponse.de(consultar.buscarPorId(id));
-	}
-
 	@GetMapping("/os/{osId}")
 	@Operation(summary = "Consulta a execucao de uma Ordem de Servico")
-	public ExecucaoResponse porOsId(@PathVariable String osId) {
+	public ExecucaoResponse porOsId(@PathVariable Long osId) {
 		return ExecucaoResponse.de(consultar.buscarPorOsId(osId));
 	}
 
@@ -51,35 +46,23 @@ public class ExecucaoController {
 		return consultar.listarFila().stream().map(ExecucaoResponse::de).toList();
 	}
 
-	@PostMapping("/{id}/diagnostico")
-	@Operation(summary = "Inicia o diagnostico da execucao")
-	public ExecucaoResponse iniciarDiagnostico(@PathVariable String id,
-	                                           @RequestBody(required = false) EtapaRequest request) {
-		return ExecucaoResponse.de(gerenciar.iniciarDiagnostico(id, observacao(request)));
+	@PostMapping("/{osId}/diagnostico")
+	@Operation(summary = "Conclui o diagnostico com os itens e publica diagnostico.concluido")
+	public ExecucaoResponse concluirDiagnostico(@PathVariable Long osId,
+	                                            @Valid @RequestBody ItensRequest request) {
+		return ExecucaoResponse.de(gerenciar.concluirDiagnostico(osId, request.toDomain()));
 	}
 
-	@PostMapping("/{id}/reparo")
-	@Operation(summary = "Inicia o reparo da execucao")
-	public ExecucaoResponse iniciarReparo(@PathVariable String id,
-	                                      @RequestBody(required = false) EtapaRequest request) {
-		return ExecucaoResponse.de(gerenciar.iniciarReparo(id, observacao(request)));
+	@PostMapping("/{osId}/finalizacao")
+	@Operation(summary = "Finaliza o reparo e publica execucao.finalizada")
+	public ExecucaoResponse finalizar(@PathVariable Long osId) {
+		return ExecucaoResponse.de(gerenciar.finalizar(osId));
 	}
 
-	@PostMapping("/{id}/finalizacao")
-	@Operation(summary = "Finaliza a execucao e publica execucao.finalizada")
-	public ExecucaoResponse finalizar(@PathVariable String id,
-	                                  @RequestBody(required = false) EtapaRequest request) {
-		return ExecucaoResponse.de(gerenciar.finalizar(id, observacao(request)));
-	}
-
-	@PostMapping("/{id}/falha")
-	@Operation(summary = "Registra falha na execucao e publica execucao.falhou")
-	public ExecucaoResponse registrarFalha(@PathVariable String id,
+	@PostMapping("/{osId}/falha")
+	@Operation(summary = "Registra falha no reparo e publica execucao.falhou")
+	public ExecucaoResponse registrarFalha(@PathVariable Long osId,
 	                                       @Valid @RequestBody FalhaRequest request) {
-		return ExecucaoResponse.de(gerenciar.registrarFalha(id, request.motivo()));
-	}
-
-	private static String observacao(EtapaRequest request) {
-		return request != null ? request.observacao() : null;
+		return ExecucaoResponse.de(gerenciar.registrarFalha(osId, request.motivo()));
 	}
 }

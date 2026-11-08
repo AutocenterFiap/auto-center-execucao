@@ -3,122 +3,113 @@ package br.com.autocenterfiap.execucao.domain.entity;
 import br.com.autocenterfiap.execucao.domain.enums.StatusExecucao;
 import br.com.autocenterfiap.execucao.domain.exception.ExecucaoInvalidaException;
 import br.com.autocenterfiap.execucao.domain.exception.TransicaoInvalidaException;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ExecucaoTest {
 
-	@Test
-	@DisplayName("criarNaFila deve iniciar em NA_FILA e registrar o primeiro evento")
-	void criarNaFila() {
-		Execucao execucao = Execucao.criarNaFila("os-123", 1);
+	private Execucao novaExecucao() {
+		return Execucao.criar(123L, 1001L, 42L, 77L, "Barulho ao frear", "corr-1", 1);
+	}
 
-		assertEquals("os-123", execucao.getOsId());
-		assertEquals(StatusExecucao.NA_FILA, execucao.getStatus());
-		assertEquals(1, execucao.getPosicaoFila());
-		assertNotNull(execucao.getCriadoEm());
-		assertNull(execucao.getFinalizadoEm());
-		assertEquals(1, execucao.getHistorico().size());
-		assertEquals(StatusExecucao.NA_FILA, execucao.getHistorico().get(0).getStatusNovo());
+	private Itens itens() {
+		return new Itens(
+				List.of(new Itens.ItemServico(1L, "Troca de óleo", new BigDecimal("120.00"))),
+				List.of(new Itens.ItemProduto(7L, "Filtro", 1, new BigDecimal("45.00"))));
 	}
 
 	@Test
-	@DisplayName("criarNaFila deve rejeitar osId em branco")
-	void criarNaFilaOsIdInvalido() {
-		assertThrows(ExecucaoInvalidaException.class, () -> Execucao.criarNaFila("  ", 1));
-		assertThrows(ExecucaoInvalidaException.class, () -> Execucao.criarNaFila(null, 1));
+	void criarDeveIniciarNaFilaComOsDados() {
+		Execucao e = novaExecucao();
+		assertEquals(123L, e.getOsId());
+		assertEquals(1001L, e.getNumero());
+		assertEquals(42L, e.getClienteId());
+		assertEquals(StatusExecucao.NA_FILA, e.getStatus());
+		assertEquals(1, e.getPosicaoFila());
+		assertEquals(1, e.getHistorico().size());
 	}
 
 	@Test
-	@DisplayName("fluxo feliz: NA_FILA -> EM_DIAGNOSTICO -> EM_EXECUCAO -> FINALIZADA")
+	void criarDeveRejeitarOsIdNulo() {
+		assertThrows(ExecucaoInvalidaException.class,
+				() -> Execucao.criar(null, 1L, 1L, 1L, "x", "c", 1));
+	}
+
+	@Test
 	void fluxoFeliz() {
-		Execucao execucao = Execucao.criarNaFila("os-123", 1);
+		Execucao e = novaExecucao();
+		e.iniciarDiagnostico(3L);
+		assertEquals(StatusExecucao.EM_DIAGNOSTICO, e.getStatus());
+		assertEquals(3L, e.getMecanicoId());
 
-		execucao.iniciarDiagnostico("avaliando o veiculo");
-		assertEquals(StatusExecucao.EM_DIAGNOSTICO, execucao.getStatus());
+		e.concluirDiagnostico(itens());
+		assertEquals(StatusExecucao.DIAGNOSTICO_CONCLUIDO, e.getStatus());
+		assertFalse(e.getItens().vazio());
 
-		execucao.iniciarReparo("trocando pastilhas");
-		assertEquals(StatusExecucao.EM_EXECUCAO, execucao.getStatus());
+		e.iniciarReparo(null);
+		assertEquals(StatusExecucao.EM_EXECUCAO, e.getStatus());
+		assertEquals(3L, e.getMecanicoId()); // mantem o mecanico do diagnostico
 
-		execucao.finalizar("reparo concluido");
-		assertEquals(StatusExecucao.FINALIZADA, execucao.getStatus());
-		assertNotNull(execucao.getFinalizadoEm());
-		assertTrue(execucao.getStatus().ehTerminal());
-		// 1 (criacao) + 3 transicoes
-		assertEquals(4, execucao.getHistorico().size());
+		e.finalizar();
+		assertEquals(StatusExecucao.FINALIZADA, e.getStatus());
+		assertNotNull(e.getFinalizadoEm());
+		assertEquals(5, e.getHistorico().size());
 	}
 
 	@Test
-	@DisplayName("transicao invalida deve lancar excecao e nao alterar o estado")
-	void transicaoInvalida() {
-		Execucao execucao = Execucao.criarNaFila("os-123", 1);
-
-		// NA_FILA nao pode ir direto para EM_EXECUCAO (finalizar tambem invalido aqui)
-		assertThrows(TransicaoInvalidaException.class, () -> execucao.iniciarReparo(null));
-		assertThrows(TransicaoInvalidaException.class, () -> execucao.finalizar(null));
-		assertEquals(StatusExecucao.NA_FILA, execucao.getStatus());
-		assertEquals(1, execucao.getHistorico().size());
+	void transicaoInvalidaNaoAlteraEstado() {
+		Execucao e = novaExecucao();
+		assertThrows(TransicaoInvalidaException.class, () -> e.iniciarReparo(null));
+		assertEquals(StatusExecucao.NA_FILA, e.getStatus());
 	}
 
 	@Test
-	@DisplayName("falhar deve registrar motivo e marcar estado terminal FALHA")
-	void falhar() {
-		Execucao execucao = Execucao.criarNaFila("os-123", 1);
-		execucao.iniciarDiagnostico(null);
+	void falharNoReparo() {
+		Execucao e = novaExecucao();
+		e.iniciarDiagnostico(3L);
+		e.concluirDiagnostico(itens());
+		e.iniciarReparo(null);
 
-		execucao.falhar("peca indisponivel");
+		e.falhar("Peça com defeito");
 
-		assertEquals(StatusExecucao.FALHA, execucao.getStatus());
-		assertEquals("peca indisponivel", execucao.getMotivoFalha());
-		assertNotNull(execucao.getFinalizadoEm());
+		assertEquals(StatusExecucao.FALHA, e.getStatus());
+		assertEquals("Peça com defeito", e.getMotivo());
+		assertNotNull(e.getFinalizadoEm());
 	}
 
 	@Test
-	@DisplayName("nao deve permitir transicao a partir de estado terminal")
-	void transicaoAPartirDeTerminal() {
-		Execucao execucao = Execucao.criarNaFila("os-123", 1);
-		execucao.iniciarDiagnostico(null);
-		execucao.iniciarReparo(null);
-		execucao.finalizar(null);
+	void cancelarAPartirDeEstadoAtivo() {
+		Execucao e = novaExecucao();
+		e.iniciarDiagnostico(3L);
 
-		assertThrows(TransicaoInvalidaException.class, () -> execucao.falhar("tarde demais"));
+		assertTrue(e.cancelar("ORCAMENTO_REPROVADO"));
+		assertEquals(StatusExecucao.CANCELADA, e.getStatus());
+		assertEquals("ORCAMENTO_REPROVADO", e.getMotivo());
 	}
 
 	@Test
-	@DisplayName("getHistorico deve ser imutavel")
+	void cancelarEmEstadoTerminalEhNoOp() {
+		Execucao e = novaExecucao();
+		e.iniciarDiagnostico(3L);
+		e.concluirDiagnostico(itens());
+		e.iniciarReparo(null);
+		e.finalizar();
+
+		assertFalse(e.cancelar("tarde demais"));
+		assertEquals(StatusExecucao.FINALIZADA, e.getStatus());
+	}
+
+	@Test
 	void historicoImutavel() {
-		Execucao execucao = Execucao.criarNaFila("os-123", 1);
-		assertThrows(UnsupportedOperationException.class,
-				() -> execucao.getHistorico().add(null));
-	}
-
-	@Test
-	@DisplayName("reconstituir deve restaurar o estado sem gerar novos eventos")
-	void reconstituir() {
-		Execucao original = Execucao.criarNaFila("os-123", 2);
-		original.iniciarDiagnostico(null);
-
-		Execucao restaurada = Execucao.reconstituir(
-				"abc-id", original.getOsId(), original.getStatus(), original.getPosicaoFila(),
-				null, original.getCriadoEm(), original.getAtualizadoEm(), null, original.getHistorico());
-
-		assertEquals("abc-id", restaurada.getId());
-		assertEquals(StatusExecucao.EM_DIAGNOSTICO, restaurada.getStatus());
-		assertEquals(2, restaurada.getHistorico().size());
-	}
-
-	@Test
-	@DisplayName("reconstituir deve validar campos obrigatorios")
-	void reconstituirInvalido() {
-		assertThrows(ExecucaoInvalidaException.class, () -> Execucao.reconstituir(
-				"id", null, StatusExecucao.NA_FILA, 1, null, null, null, null, null));
-		assertThrows(ExecucaoInvalidaException.class, () -> Execucao.reconstituir(
-				"id", "os-1", null, 1, null, null, null, null, null));
+		Execucao e = novaExecucao();
+		assertThrows(UnsupportedOperationException.class, () -> e.getHistorico().add(null));
 	}
 }

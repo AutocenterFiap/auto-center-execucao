@@ -16,8 +16,9 @@ import java.util.Optional;
 @Component
 public class ExecucaoPersistenceAdapter implements ExecucaoRepositoryPort {
 
-	private static final List<StatusExecucao> STATUS_ATIVOS =
-			List.of(StatusExecucao.NA_FILA, StatusExecucao.EM_DIAGNOSTICO, StatusExecucao.EM_EXECUCAO);
+	private static final List<StatusExecucao> STATUS_ATIVOS = List.of(
+			StatusExecucao.NA_FILA, StatusExecucao.EM_DIAGNOSTICO,
+			StatusExecucao.DIAGNOSTICO_CONCLUIDO, StatusExecucao.EM_EXECUCAO);
 
 	private final ExecucaoMongoRepository repository;
 
@@ -32,12 +33,7 @@ public class ExecucaoPersistenceAdapter implements ExecucaoRepositoryPort {
 	}
 
 	@Override
-	public Optional<Execucao> buscarPorId(String id) {
-		return repository.findById(id).map(ExecucaoDocumentMapper::toDomain);
-	}
-
-	@Override
-	public Optional<Execucao> buscarPorOsId(String osId) {
+	public Optional<Execucao> buscarPorOsId(Long osId) {
 		return repository.findByOsId(osId).map(ExecucaoDocumentMapper::toDomain);
 	}
 

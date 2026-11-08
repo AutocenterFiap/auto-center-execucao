@@ -1,17 +1,17 @@
 package br.com.autocenterfiap.execucao.application.port.in;
 
 import br.com.autocenterfiap.execucao.domain.entity.Execucao;
+import br.com.autocenterfiap.execucao.domain.entity.Itens;
 
 /**
- * Avanca as etapas de uma execucao. Acionado pelos endpoints REST da oficina.
+ * Operacoes acionadas pela oficina via REST: concluir o diagnostico (com itens),
+ * finalizar o reparo e registrar falha. Cada uma publica o evento correspondente.
  */
 public interface GerenciarExecucaoUseCase {
 
-	Execucao iniciarDiagnostico(String execucaoId, String observacao);
+	Execucao concluirDiagnostico(Long osId, Itens itens);
 
-	Execucao iniciarReparo(String execucaoId, String observacao);
+	Execucao finalizar(Long osId);
 
-	Execucao finalizar(String execucaoId, String observacao);
-
-	Execucao registrarFalha(String execucaoId, String motivo);
+	Execucao registrarFalha(Long osId, String motivo);
 }

@@ -1,5 +1,9 @@
 package br.com.autocenterfiap.execucao.adapter.out.messaging;
 
+import br.com.autocenterfiap.execucao.adapter.messaging.ItensContratoMapper;
+import br.com.autocenterfiap.execucao.adapter.messaging.contract.EventoEnvelope;
+import br.com.autocenterfiap.execucao.adapter.messaging.contract.ExecucaoPayloads;
+import br.com.autocenterfiap.execucao.adapter.messaging.contract.TipoEvento;
 import br.com.autocenterfiap.execucao.application.port.out.ExecucaoEventPublisherPort;
 import br.com.autocenterfiap.execucao.domain.entity.Execucao;
 import br.com.autocenterfiap.execucao.infrastructure.config.KafkaTopicsProperties;
@@ -9,7 +13,8 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
 /**
- * Publica os eventos de dominio da execucao no Kafka, usando o {@code osId} como chave.
+ * Publica os eventos da Execucao no topico {@code execucao.eventos}, usando o envelope
+ * padrao e o {@code osId} como chave.
  */
 @Component
 public class ExecucaoKafkaPublisher implements ExecucaoEventPublisherPort {
@@ -25,23 +30,38 @@ public class ExecucaoKafkaPublisher implements ExecucaoEventPublisherPort {
 	}
 
 	@Override
-	public void publicarExecucaoIniciada(Execucao execucao) {
-		publicar(topics.execucaoIniciada(), "execucao.iniciada", execucao);
+	public void diagnosticoIniciado(Execucao execucao) {
+		publicar(TipoEvento.DIAGNOSTICO_INICIADO, execucao,
+				new ExecucaoPayloads.DiagnosticoIniciado(execucao.getMecanicoId()));
 	}
 
 	@Override
-	public void publicarExecucaoFinalizada(Execucao execucao) {
-		publicar(topics.execucaoFinalizada(), "execucao.finalizada", execucao);
+	public void diagnosticoConcluido(Execucao execucao) {
+		publicar(TipoEvento.DIAGNOSTICO_CONCLUIDO, execucao,
+				new ExecucaoPayloads.DiagnosticoConcluido(ItensContratoMapper.toContrato(execucao.getItens())));
 	}
 
 	@Override
-	public void publicarExecucaoFalhou(Execucao execucao) {
-		publicar(topics.execucaoFalhou(), "execucao.falhou", execucao);
+	public void execucaoIniciada(Execucao execucao) {
+		publicar(TipoEvento.EXECUCAO_INICIADA, execucao,
+				new ExecucaoPayloads.ExecucaoIniciada(execucao.getMecanicoId()));
 	}
 
-	private void publicar(String topico, String evento, Execucao execucao) {
-		ExecucaoEventPayload payload = ExecucaoEventPayload.de(evento, execucao);
-		log.info("Publicando evento {} para OS {} no topico {}", evento, execucao.getOsId(), topico);
-		kafkaTemplate.send(topico, execucao.getOsId(), payload);
+	@Override
+	public void execucaoFinalizada(Execucao execucao) {
+		publicar(TipoEvento.EXECUCAO_FINALIZADA, execucao, new ExecucaoPayloads.ExecucaoFinalizada());
+	}
+
+	@Override
+	public void execucaoFalhou(Execucao execucao) {
+		publicar(TipoEvento.EXECUCAO_FALHOU, execucao,
+				new ExecucaoPayloads.ExecucaoFalhou(execucao.getMotivo()));
+	}
+
+	private void publicar(String tipo, Execucao execucao, Object payload) {
+		EventoEnvelope<Object> envelope = EventoEnvelope.novo(
+				tipo, execucao.getOsId(), execucao.getCorrelationId(), payload);
+		log.info("Publicando {} para OS {} em {}", tipo, execucao.getOsId(), topics.execucaoEventos());
+		kafkaTemplate.send(topics.execucaoEventos(), String.valueOf(execucao.getOsId()), envelope);
 	}
 }

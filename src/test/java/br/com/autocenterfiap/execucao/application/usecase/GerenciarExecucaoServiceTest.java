@@ -4,6 +4,7 @@ import br.com.autocenterfiap.execucao.application.exception.ExecucaoNaoEncontrad
 import br.com.autocenterfiap.execucao.application.port.out.ExecucaoEventPublisherPort;
 import br.com.autocenterfiap.execucao.application.port.out.ExecucaoRepositoryPort;
 import br.com.autocenterfiap.execucao.domain.entity.Execucao;
+import br.com.autocenterfiap.execucao.domain.entity.Itens;
 import br.com.autocenterfiap.execucao.domain.enums.StatusExecucao;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -11,14 +12,12 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.Instant;
-import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -32,52 +31,57 @@ class GerenciarExecucaoServiceTest {
 	@InjectMocks
 	GerenciarExecucaoService service;
 
-	private Execucao execucaoEm(StatusExecucao status) {
-		return Execucao.reconstituir("exec-1", "os-1", status, 1, null,
-				Instant.now(), Instant.now(), null, new ArrayList<>());
+	private Execucao emDiagnostico() {
+		Execucao e = Execucao.criar(123L, 1001L, 42L, 77L, "x", "corr-1", 1);
+		e.iniciarDiagnostico(3L);
+		return e;
+	}
+
+	private Execucao emExecucao() {
+		Execucao e = emDiagnostico();
+		e.concluirDiagnostico(new Itens(List.of(), List.of()));
+		e.iniciarReparo(null);
+		return e;
 	}
 
 	@Test
-	void iniciarDiagnosticoDeveTransitarESalvar() {
-		when(repository.buscarPorId("exec-1")).thenReturn(Optional.of(execucaoEm(StatusExecucao.NA_FILA)));
+	void concluirDiagnosticoDevePublicar() {
+		when(repository.buscarPorOsId(123L)).thenReturn(Optional.of(emDiagnostico()));
 		when(repository.salvar(any(Execucao.class))).thenAnswer(inv -> inv.getArgument(0));
 
-		Execucao resultado = service.iniciarDiagnostico("exec-1", "ok");
+		Execucao r = service.concluirDiagnostico(123L,
+				new Itens(List.of(new Itens.ItemServico(1L, "s", new java.math.BigDecimal("10.00"))), List.of()));
 
-		assertEquals(StatusExecucao.EM_DIAGNOSTICO, resultado.getStatus());
-		verify(repository).salvar(resultado);
-		verify(publisher, never()).publicarExecucaoFinalizada(any());
+		assertEquals(StatusExecucao.DIAGNOSTICO_CONCLUIDO, r.getStatus());
+		verify(publisher).diagnosticoConcluido(r);
 	}
 
 	@Test
-	void finalizarDevePublicarEventoFinalizada() {
-		when(repository.buscarPorId("exec-1")).thenReturn(Optional.of(execucaoEm(StatusExecucao.EM_EXECUCAO)));
+	void finalizarDevePublicar() {
+		when(repository.buscarPorOsId(123L)).thenReturn(Optional.of(emExecucao()));
 		when(repository.salvar(any(Execucao.class))).thenAnswer(inv -> inv.getArgument(0));
 
-		Execucao resultado = service.finalizar("exec-1", "concluido");
+		Execucao r = service.finalizar(123L);
 
-		assertEquals(StatusExecucao.FINALIZADA, resultado.getStatus());
-		verify(publisher).publicarExecucaoFinalizada(resultado);
+		assertEquals(StatusExecucao.FINALIZADA, r.getStatus());
+		verify(publisher).execucaoFinalizada(r);
 	}
 
 	@Test
-	void registrarFalhaDevePublicarEventoFalhou() {
-		when(repository.buscarPorId("exec-1")).thenReturn(Optional.of(execucaoEm(StatusExecucao.EM_DIAGNOSTICO)));
+	void registrarFalhaDevePublicar() {
+		when(repository.buscarPorOsId(123L)).thenReturn(Optional.of(emExecucao()));
 		when(repository.salvar(any(Execucao.class))).thenAnswer(inv -> inv.getArgument(0));
 
-		Execucao resultado = service.registrarFalha("exec-1", "peca indisponivel");
+		Execucao r = service.registrarFalha(123L, "Peça com defeito");
 
-		assertEquals(StatusExecucao.FALHA, resultado.getStatus());
-		assertEquals("peca indisponivel", resultado.getMotivoFalha());
-		verify(publisher).publicarExecucaoFalhou(resultado);
+		assertEquals(StatusExecucao.FALHA, r.getStatus());
+		assertEquals("Peça com defeito", r.getMotivo());
+		verify(publisher).execucaoFalhou(r);
 	}
 
 	@Test
-	void deveLancarQuandoExecucaoNaoEncontrada() {
-		when(repository.buscarPorId("inexistente")).thenReturn(Optional.empty());
-
-		assertThrows(ExecucaoNaoEncontradaException.class,
-				() -> service.iniciarReparo("inexistente", null));
-		verify(repository, never()).salvar(any());
+	void deveLancarQuandoNaoEncontrada() {
+		when(repository.buscarPorOsId(999L)).thenReturn(Optional.empty());
+		assertThrows(ExecucaoNaoEncontradaException.class, () -> service.finalizar(999L));
 	}
 }

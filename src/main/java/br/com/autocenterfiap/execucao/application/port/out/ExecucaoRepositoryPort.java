@@ -6,24 +6,18 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Porta de saida para persistencia de execucoes (implementada pela camada de
- * infraestrutura com MongoDB).
+ * Porta de saida para persistencia de execucoes (MongoDB).
  */
 public interface ExecucaoRepositoryPort {
 
 	Execucao salvar(Execucao execucao);
 
-	Optional<Execucao> buscarPorId(String id);
-
-	Optional<Execucao> buscarPorOsId(String osId);
+	Optional<Execucao> buscarPorOsId(Long osId);
 
 	/**
 	 * Execucoes ainda ativas (nao terminais), ordenadas pela posicao na fila.
 	 */
 	List<Execucao> listarFila();
 
-	/**
-	 * Proxima posicao disponivel na fila.
-	 */
 	long proximaPosicaoFila();
 }

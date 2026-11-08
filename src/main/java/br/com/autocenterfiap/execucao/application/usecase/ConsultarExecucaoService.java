@@ -19,15 +19,9 @@ public class ConsultarExecucaoService implements ConsultarExecucaoUseCase {
 	}
 
 	@Override
-	public Execucao buscarPorId(String execucaoId) {
-		return repository.buscarPorId(execucaoId)
-				.orElseThrow(() -> new ExecucaoNaoEncontradaException("id", execucaoId));
-	}
-
-	@Override
-	public Execucao buscarPorOsId(String osId) {
+	public Execucao buscarPorOsId(Long osId) {
 		return repository.buscarPorOsId(osId)
-				.orElseThrow(() -> new ExecucaoNaoEncontradaException("osId", osId));
+				.orElseThrow(() -> new ExecucaoNaoEncontradaException(osId));
 	}
 
 	@Override

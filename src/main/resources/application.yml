@@ -11,28 +11,28 @@ spring:
       group-id: execucao-service
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
-      properties:
-        spring.json.trusted.packages: "br.com.autocenterfiap.*"
+      # Consumimos o JSON cru e roteamos por 'tipo' no envelope.
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.headers: false
 
 server:
   port: ${SERVER_PORT:8098}
 
 # ========================================
-# Topicos Kafka do ecossistema (Fase 4)
+# Topicos Kafka do ecossistema (contrato da Saga)
 # ========================================
 execucao:
   kafka:
     topics:
-      # consumido
-      pagamento-confirmado: pagamento.confirmado
-      # publicados
-      execucao-iniciada: execucao.iniciada
-      execucao-finalizada: execucao.finalizada
-      execucao-falhou: execucao.falhou
+      # consumidos
+      os-eventos: os.eventos
+      execucao-comandos: execucao.comandos
+      # publicado
+      execucao-eventos: execucao.eventos
 
 # ========================================
 # Swagger / OpenAPI

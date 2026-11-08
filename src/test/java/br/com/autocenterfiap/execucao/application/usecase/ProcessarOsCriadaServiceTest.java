@@ -1,6 +1,6 @@
 package br.com.autocenterfiap.execucao.application.usecase;
 
-import br.com.autocenterfiap.execucao.application.dto.IniciarExecucaoCommand;
+import br.com.autocenterfiap.execucao.application.dto.OsCriadaCommand;
 import br.com.autocenterfiap.execucao.application.port.out.ExecucaoEventPublisherPort;
 import br.com.autocenterfiap.execucao.application.port.out.ExecucaoRepositoryPort;
 import br.com.autocenterfiap.execucao.domain.entity.Execucao;
@@ -11,8 +11,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -23,40 +21,42 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class IniciarExecucaoServiceTest {
+class ProcessarOsCriadaServiceTest {
 
 	@Mock
 	ExecucaoRepositoryPort repository;
 	@Mock
 	ExecucaoEventPublisherPort publisher;
 	@InjectMocks
-	IniciarExecucaoService service;
+	ProcessarOsCriadaService service;
+
+	private OsCriadaCommand comando() {
+		return new OsCriadaCommand(123L, 1001L, 42L, 77L, "Barulho ao frear", "corr-1");
+	}
 
 	@Test
-	void deveCriarEnfileirarEPublicarQuandoNaoExiste() {
-		when(repository.buscarPorOsId("os-1")).thenReturn(Optional.empty());
-		when(repository.proximaPosicaoFila()).thenReturn(5L);
+	void deveCriarEnfileirarIniciarDiagnosticoEPublicar() {
+		when(repository.buscarPorOsId(123L)).thenReturn(Optional.empty());
+		when(repository.proximaPosicaoFila()).thenReturn(3L);
 		when(repository.salvar(any(Execucao.class))).thenAnswer(inv -> inv.getArgument(0));
 
-		Execucao resultado = service.iniciar(new IniciarExecucaoCommand("os-1"));
+		Execucao resultado = service.processar(comando());
 
-		assertEquals(StatusExecucao.NA_FILA, resultado.getStatus());
-		assertEquals("os-1", resultado.getOsId());
-		assertEquals(5, resultado.getPosicaoFila());
-		verify(repository).salvar(any(Execucao.class));
-		verify(publisher).publicarExecucaoIniciada(resultado);
+		assertEquals(StatusExecucao.EM_DIAGNOSTICO, resultado.getStatus());
+		assertEquals(3, resultado.getPosicaoFila());
+		assertEquals(3L, resultado.getMecanicoId()); // floorMod(122,5)+1
+		verify(publisher).diagnosticoIniciado(resultado);
 	}
 
 	@Test
 	void deveSerIdempotenteQuandoJaExiste() {
-		Execucao existente = Execucao.reconstituir("exec-1", "os-1", StatusExecucao.EM_EXECUCAO, 1,
-				null, Instant.now(), Instant.now(), null, new ArrayList<>());
-		when(repository.buscarPorOsId("os-1")).thenReturn(Optional.of(existente));
+		Execucao existente = Execucao.criar(123L, 1001L, 42L, 77L, "x", "corr-1", 1);
+		when(repository.buscarPorOsId(123L)).thenReturn(Optional.of(existente));
 
-		Execucao resultado = service.iniciar(new IniciarExecucaoCommand("os-1"));
+		Execucao resultado = service.processar(comando());
 
 		assertSame(existente, resultado);
 		verify(repository, never()).salvar(any());
-		verify(publisher, never()).publicarExecucaoIniciada(any());
+		verify(publisher, never()).diagnosticoIniciado(any());
 	}
 }

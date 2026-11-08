@@ -10,7 +10,7 @@ import java.util.Optional;
 
 public interface ExecucaoMongoRepository extends MongoRepository<ExecucaoDocument, String> {
 
-	Optional<ExecucaoDocument> findByOsId(String osId);
+	Optional<ExecucaoDocument> findByOsId(Long osId);
 
 	List<ExecucaoDocument> findByStatusInOrderByPosicaoFilaAsc(Collection<StatusExecucao> status);
 }

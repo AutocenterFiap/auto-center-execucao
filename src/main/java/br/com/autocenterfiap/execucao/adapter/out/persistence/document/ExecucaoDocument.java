@@ -28,11 +28,20 @@ public class ExecucaoDocument {
 	private String id;
 
 	@Indexed(unique = true)
-	private String osId;
+	private Long osId;
+
+	private Long numero;
+	private Long clienteId;
+	private Long veiculoId;
+	private String problemaRelatado;
+	private String correlationId;
 
 	private StatusExecucao status;
 	private Integer posicaoFila;
-	private String motivoFalha;
+	private Long mecanicoId;
+	private ItensDocument itens;
+	private String motivo;
+
 	private Instant criadoEm;
 	private Instant atualizadoEm;
 	private Instant finalizadoEm;

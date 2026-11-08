@@ -5,10 +5,11 @@ import br.com.autocenterfiap.execucao.application.port.in.GerenciarExecucaoUseCa
 import br.com.autocenterfiap.execucao.application.port.out.ExecucaoEventPublisherPort;
 import br.com.autocenterfiap.execucao.application.port.out.ExecucaoRepositoryPort;
 import br.com.autocenterfiap.execucao.domain.entity.Execucao;
+import br.com.autocenterfiap.execucao.domain.entity.Itens;
 
 /**
- * Avanca as etapas de uma execucao. Ao finalizar ou falhar, publica o evento
- * correspondente para o orquestrador da Saga (OS Service).
+ * Operacoes da oficina via REST: concluir diagnostico (com itens), finalizar e
+ * registrar falha. Cada uma publica o evento correspondente.
  */
 public class GerenciarExecucaoService implements GerenciarExecucaoUseCase {
 
@@ -21,39 +22,34 @@ public class GerenciarExecucaoService implements GerenciarExecucaoUseCase {
 	}
 
 	@Override
-	public Execucao iniciarDiagnostico(String execucaoId, String observacao) {
-		Execucao execucao = carregar(execucaoId);
-		execucao.iniciarDiagnostico(observacao);
-		return repository.salvar(execucao);
-	}
-
-	@Override
-	public Execucao iniciarReparo(String execucaoId, String observacao) {
-		Execucao execucao = carregar(execucaoId);
-		execucao.iniciarReparo(observacao);
-		return repository.salvar(execucao);
-	}
-
-	@Override
-	public Execucao finalizar(String execucaoId, String observacao) {
-		Execucao execucao = carregar(execucaoId);
-		execucao.finalizar(observacao);
+	public Execucao concluirDiagnostico(Long osId, Itens itens) {
+		Execucao execucao = carregar(osId);
+		execucao.concluirDiagnostico(itens);
 		Execucao salva = repository.salvar(execucao);
-		publisher.publicarExecucaoFinalizada(salva);
+		publisher.diagnosticoConcluido(salva);
 		return salva;
 	}
 
 	@Override
-	public Execucao registrarFalha(String execucaoId, String motivo) {
-		Execucao execucao = carregar(execucaoId);
+	public Execucao finalizar(Long osId) {
+		Execucao execucao = carregar(osId);
+		execucao.finalizar();
+		Execucao salva = repository.salvar(execucao);
+		publisher.execucaoFinalizada(salva);
+		return salva;
+	}
+
+	@Override
+	public Execucao registrarFalha(Long osId, String motivo) {
+		Execucao execucao = carregar(osId);
 		execucao.falhar(motivo);
 		Execucao salva = repository.salvar(execucao);
-		publisher.publicarExecucaoFalhou(salva);
+		publisher.execucaoFalhou(salva);
 		return salva;
 	}
 
-	private Execucao carregar(String execucaoId) {
-		return repository.buscarPorId(execucaoId)
-				.orElseThrow(() -> new ExecucaoNaoEncontradaException("id", execucaoId));
+	private Execucao carregar(Long osId) {
+		return repository.buscarPorOsId(osId)
+				.orElseThrow(() -> new ExecucaoNaoEncontradaException(osId));
 	}
 }
