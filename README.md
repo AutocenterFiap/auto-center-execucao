@@ -4,13 +4,16 @@ Microsserviço responsável pela **fila de serviços da oficina**: controla o di
 início e a finalização dos reparos. Faz parte do ecossistema de microsserviços do Tech
 Challenge SOAT **Fase 4**.
 
-- Consome o evento `pagamento.confirmado` (do serviço de Orçamento e Pagamento) e coloca a
-  Ordem de Serviço (OS) na fila de execução.
-- As etapas (diagnóstico, reparo, finalização) são avançadas via **endpoints REST** pela
-  oficina.
-- Ao finalizar, publica `execucao.finalizada` para o serviço de Ordem de Serviço concluir a OS.
-- Em falha irreversível, publica `execucao.falhou` para a compensação da Saga.
-- Usa **MongoDB (NoSQL)** para guardar o histórico de etapas e eventos operacionais.
+- Faz parte do ecossistema do Tech Challenge SOAT **Fase 4**, com saga **orquestrada pelo
+  serviço de Ordem de Serviço (OS Service)**.
+- Ao receber `os.criada`, coloca a OS na fila e **conduz o diagnóstico**, publicando
+  `diagnostico.iniciado` e, com os itens informados pela oficina, `diagnostico.concluido`.
+- Ao receber `execucao.iniciar-reparo` (após o pagamento confirmado), inicia o reparo
+  (`execucao.iniciada`).
+- A oficina registra o resultado do diagnóstico, a finalização e a falha via **endpoints REST**.
+- Ao finalizar publica `execucao.finalizada`; em falha, `execucao.falhou` (compensação).
+  O evento `os.cancelada` cancela a execução.
+- Usa **MongoDB (NoSQL)** para o histórico de etapas e a deduplicação de eventos.
 
 ---
 
@@ -28,39 +31,58 @@ infrastructure/   # Configuração (Spring, Kafka, Mongo, observabilidade)
 ### Máquina de estados da execução
 
 ```
-NA_FILA → EM_DIAGNOSTICO → EM_EXECUCAO → FINALIZADA
-   └──────────┴──────────────┴──────────→ FALHA   (compensação)
+NA_FILA → EM_DIAGNOSTICO → DIAGNOSTICO_CONCLUIDO → EM_EXECUCAO → FINALIZADA
+   └──────────┴────────────────────┴──────────────────┴───────→ FALHA | CANCELADA
 ```
 
 ---
 
 ## Saga Pattern
 
-A Saga do ecossistema é **orquestrada pelo serviço de Ordem de Serviço**. Este serviço atua
-de forma **coreografada**: reage a eventos recebidos e publica eventos de resultado, sem
-orquestrar outros serviços. A escolha (orquestração no OS Service) é justificada pela
-necessidade de um ponto único que acompanhe todo o ciclo da OS (criação → orçamento →
-pagamento → execução) e dispare compensações.
+A Saga é **orquestrada pelo serviço de Ordem de Serviço (OS Service)**, que acompanha todo o
+ciclo da OS e dispara as compensações. Os demais serviços — este incluso — participam de forma
+coreografada: reagem a comandos/eventos e publicam eventos de resultado.
 
-### Tópicos Kafka do ecossistema
+Todas as mensagens usam um **envelope padrão** (chave Kafka = `osId`):
 
-| Tópico | Produtor | Consumidor(es) | Papel |
-|--------|----------|----------------|-------|
-| `os.criada` | Ordem de Serviço | Orçamento/Pagamento | Happy path |
-| `orcamento.gerado` | Orçamento/Pagamento | Ordem de Serviço | Tracking |
-| `orcamento.aprovado` | Orçamento/Pagamento | Ordem de Serviço | Happy path |
-| `orcamento.reprovado` | Orçamento/Pagamento | Ordem de Serviço | Compensação |
-| `pagamento.confirmado` | Orçamento/Pagamento | **Execução**, Ordem de Serviço | Libera execução |
-| `pagamento.recusado` | Orçamento/Pagamento | Ordem de Serviço | Compensação |
-| `execucao.iniciada` | **Execução** | Ordem de Serviço | Tracking |
-| `execucao.finalizada` | **Execução** | Ordem de Serviço | Conclui a OS |
-| `execucao.falhou` | **Execução** | Ordem de Serviço | Compensação |
+```json
+{ "eventId": "...", "tipo": "os.criada", "versao": 1, "osId": 123,
+  "correlationId": "...", "ocorridoEm": "2026-01-01T00:00:00Z", "payload": {} }
+```
 
-**Convenções:** chave de partição = `osId`; para cada tópico consumido há `<tópico>.retry`
-e `<tópico>.DLT` (dead-letter) para tolerância a falhas.
+- `eventId` deduplica mensagens repetidas (idempotência, coleção `eventos_processados`);
+- valores monetários são strings com 2 casas (`"120.00"`);
+- consumidores ignoram campos desconhecidos.
 
-**Este serviço** consome `pagamento.confirmado` e publica `execucao.iniciada`,
-`execucao.finalizada` e `execucao.falhou`.
+### Tópicos deste serviço
+
+| Direção | Tópico | Tipos (`tipo`) |
+|---------|--------|----------------|
+| Consome | `os.eventos` | `os.criada`, `os.cancelada` |
+| Consome | `execucao.comandos` | `execucao.iniciar-reparo` |
+| Publica | `execucao.eventos` | `diagnostico.iniciado`, `diagnostico.concluido`, `execucao.iniciada`, `execucao.finalizada`, `execucao.falhou` |
+
+Para cada tópico consumido há `<tópico>.retry` e `<tópico>.DLT` (dead-letter) para tolerância a falhas.
+
+### Fluxo principal
+
+```
+os.criada → (Execução) diagnostico.iniciado → diagnostico.concluido(itens)
+  → OS gera orçamento/cobrança → pagamento.confirmado
+  → OS envia execucao.iniciar-reparo → (Execução) execucao.iniciada → execucao.finalizada
+```
+
+Compensações: `execucao.falhou` (OS pede estorno) e `os.cancelada` (cancela a execução).
+
+## API REST
+
+- `GET  /execucoes/fila` — fila de execuções ativas.
+- `GET  /execucoes/os/{osId}` — consulta a execução de uma OS.
+- `POST /execucoes/{osId}/diagnostico` — conclui o diagnóstico com os itens (publica `diagnostico.concluido`).
+- `POST /execucoes/{osId}/finalizacao` — finaliza o reparo (publica `execucao.finalizada`).
+- `POST /execucoes/{osId}/falha` — registra falha (publica `execucao.falhou`).
+
+O início do diagnóstico (em `os.criada`) e do reparo (em `execucao.iniciar-reparo`) são automáticos.
 
 ---
 
@@ -138,8 +160,9 @@ Configurar em **Settings → Branches → Branch protection rules** para `main`:
 - [x] Domínio (Execucao, EventoOperacional, transições)
 - [x] Casos de uso e ports
 - [x] Persistência MongoDB
-- [x] Consumer `pagamento.confirmado` + producers de eventos
-- [x] Endpoints REST (fila, avanço de etapas, consulta)
-- [x] Testes unitários + BDD + cobertura ≥80% (atual: 96,3%)
+- [x] Consumers (`os.eventos`, `execucao.comandos`) + publisher (`execucao.eventos`) com envelope e dedup
+- [x] Endpoints REST (fila, consulta, concluir diagnóstico, finalizar, falha)
+- [x] Testes unitários + BDD + cobertura ≥80% (atual: 93,2%)
 - [x] Dockerfile + manifestos Kubernetes
 - [x] Pipeline CI/CD + Sonar
+- [x] Migração para o novo contrato Kafka (saga orquestrada, tópicos consolidados)
