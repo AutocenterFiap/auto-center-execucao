@@ -9,6 +9,7 @@ import br.com.autocenterfiap.execucao.domain.exception.TransicaoInvalidaExceptio
 import br.com.autocenterfiap.execucao.domain.enums.StatusExecucao;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
@@ -25,6 +26,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(ExecucaoController.class)
+@AutoConfigureMockMvc(addFilters = false)
 class ExecucaoControllerTest {
 
 	@Autowired
@@ -82,8 +84,25 @@ class ExecucaoControllerTest {
 
 		mockMvc.perform(post("/execucoes/123/diagnostico")
 						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"servicos\":[{\"servicoId\":1,\"valor\":120.00}],\"produtos\":[]}"))
+						.content("{\"servicos\":[{\"servicoId\":1,\"descricao\":\"Troca\",\"valor\":120.00}],\"produtos\":[]}"))
 				.andExpect(status().isConflict());
+	}
+
+	@Test
+	void concluirDiagnosticoComItemForaDoContratoDeveRetornar400() throws Exception {
+		String[] invalidos = {
+				"{\"servicos\":[{\"servicoId\":1,\"valor\":120.00}],\"produtos\":[]}",
+				"{\"servicos\":[{\"descricao\":\"Troca\",\"valor\":120.00}],\"produtos\":[]}",
+				"{\"servicos\":[],\"produtos\":[{\"produtoId\":7,\"descricao\":\"Filtro\",\"precoUnitario\":45.00}]}",
+				"{\"servicos\":[],\"produtos\":[{\"produtoId\":7,\"descricao\":\"Filtro\",\"quantidade\":0,\"precoUnitario\":45.00}]}",
+				"{\"servicos\":[{\"servicoId\":1,\"descricao\":\"Troca\",\"valor\":-1}],\"produtos\":[]}"
+		};
+		for (String corpo : invalidos) {
+			mockMvc.perform(post("/execucoes/123/diagnostico")
+							.contentType(MediaType.APPLICATION_JSON)
+							.content(corpo))
+					.andExpect(status().isBadRequest());
+		}
 	}
 
 	@Test

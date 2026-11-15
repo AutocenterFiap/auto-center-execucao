@@ -31,5 +31,6 @@ public class CucumberSpringConfiguration {
 	static void props(DynamicPropertyRegistry registry) {
 		registry.add("spring.data.mongodb.uri", MONGO::getReplicaSetUrl);
 		registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
+		registry.add("sistema.seguranca.chave.secreta", () -> TokensTeste.SEGREDO);
 	}
 }

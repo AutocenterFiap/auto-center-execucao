@@ -1,6 +1,9 @@
 spring:
   application:
     name: auto-center-execucao
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
   data:
     mongodb:
       uri: ${MONGODB_URI:mongodb://localhost:27017/execucao}
@@ -21,6 +24,11 @@ spring:
 
 server:
   port: ${SERVER_PORT:8098}
+
+sistema:
+  seguranca:
+    chave:
+      secreta: ${SISTEMA_SEGURANCA_CHAVE_SECRETA}
 
 # ========================================
 # Topicos Kafka do ecossistema (contrato da Saga)

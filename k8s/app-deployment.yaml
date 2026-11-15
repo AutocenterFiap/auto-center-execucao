@@ -83,6 +83,11 @@ spec:
                 secretKeyRef:
                   name: execucao-secrets
                   key: MONGODB_URI
+            - name: SISTEMA_SEGURANCA_CHAVE_SECRETA
+              valueFrom:
+                secretKeyRef:
+                  name: execucao-secrets
+                  key: SISTEMA_SEGURANCA_CHAVE_SECRETA
           # ─── Variáveis não-sensíveis via ConfigMap ──────────────────
           envFrom:
             - configMapRef:

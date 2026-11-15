@@ -62,7 +62,7 @@ Todas as mensagens usam um **envelope padrão** (chave Kafka = `osId`):
 | Consome | `execucao.comandos` | `execucao.iniciar-reparo` |
 | Publica | `execucao.eventos` | `diagnostico.iniciado`, `diagnostico.concluido`, `execucao.iniciada`, `execucao.finalizada`, `execucao.falhou` |
 
-Para cada tópico consumido há `<tópico>.retry` e `<tópico>.DLT` (dead-letter) para tolerância a falhas.
+Erro técnico tem 3 retentativas bloqueantes (1 s, 2 s, 4 s), que preservam a ordem das mensagens de cada OS; depois a mensagem vai para `<tópico>.dlt` (mesma partição: `os.eventos.dlt` e `execucao.comandos.dlt`). JSON inválido vai direto para a DLT.
 
 ### Fluxo principal
 
@@ -83,6 +83,10 @@ Compensações: `execucao.falhou` (OS pede estorno) e `os.cancelada` (cancela a 
 - `POST /execucoes/{osId}/falha` — registra falha (publica `execucao.falhou`).
 
 O início do diagnóstico (em `os.criada`) e do reparo (em `execucao.iniciar-reparo`) são automáticos.
+
+As rotas `/execucoes/**` exigem `Authorization: Bearer <jwt>` (HS256, issuer `Auto Center Fiap`, com `exp`), o mesmo token do OS Service. O segredo vem de `SISTEMA_SEGURANCA_CHAVE_SECRETA`, sem valor padrão.
+
+No diagnóstico, cada serviço exige `servicoId`, `descricao` e `valor`, e cada produto exige `produtoId`, `descricao`, `quantidade` maior que zero e `precoUnitario`, como no contrato da Saga. Listas vazias são aceitas e levam o OS Service a cancelar a OS.
 
 ---
 
@@ -133,7 +137,7 @@ make verify   # testes + gate de cobertura (mínimo 80%)
 Pipelines independentes em GitHub Actions (`.github/workflows/`):
 
 - **`ci.yml`** — em PRs e pushes: build → testes (unitários + integração/BDD com Testcontainers) → qualidade (SonarQube). É o check obrigatório para merge na `main`.
-- **`cd.yml`** — em push na `main`: build e push da imagem para o **GHCR** → deploy no Kubernetes (`kubectl apply -k k8s/`), criando o Secret a partir dos GitHub Secrets. O deploy é pulado se `KUBE_CONFIG` não estiver configurado.
+- **`cd.yml`** — em push na `main`: build e push da imagem para o **GHCR** → deploy no cluster kind (`kind-autocenter`) pelo runner self-hosted: build local, `kind load`, Secret a partir dos GitHub Secrets e `kubectl apply -k` com a imagem do commit. No cluster, o Kafka compartilhado fica no namespace `autocenter` (`kafka.autocenter.svc.cluster.local:9092`).
 
 Manifestos Kubernetes e instruções de deploy em [`k8s/`](k8s/README.md).
 
@@ -148,8 +152,8 @@ Configurar em **Settings → Branches → Branch protection rules** para `main`:
 
 | Secret | Uso |
 |--------|-----|
-| `SONAR_TOKEN`, `SONAR_HOST_URL` | Análise SonarQube no CI (opcional) |
-| `KUBE_CONFIG` | kubeconfig do cluster alvo (deploy) |
+| `SONAR_TOKEN`, `SONAR_HOST_URL` | Análise SonarQube no CI (obrigatória: sem token o job falha) |
+| `SISTEMA_SEGURANCA_CHAVE_SECRETA` | Segredo HS256 do JWT, o mesmo do OS Service (deploy) |
 | `MONGO_INITDB_ROOT_USERNAME`, `MONGO_INITDB_ROOT_PASSWORD`, `MONGODB_URI` | Credenciais do MongoDB (deploy) |
 
 ---

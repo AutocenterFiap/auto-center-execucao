@@ -5,6 +5,7 @@ import br.com.autocenterfiap.execucao.adapter.messaging.contract.ExecucaoPayload
 import br.com.autocenterfiap.execucao.adapter.messaging.contract.ItensContrato;
 import br.com.autocenterfiap.execucao.adapter.messaging.contract.TipoEvento;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.cucumber.java.Before;
 import io.cucumber.java.pt.Dado;
 import io.cucumber.java.pt.E;
 import io.cucumber.java.pt.Entao;
@@ -39,6 +40,14 @@ public class ExecucaoSteps {
 	private String topicoOsEventos;
 	@Value("${execucao.kafka.topics.execucao-comandos}")
 	private String topicoExecucaoComandos;
+
+	@Before
+	public void autenticar() {
+		rest.getRestTemplate().setInterceptors(List.of((requisicao, corpo, execucao) -> {
+			requisicao.getHeaders().setBearerAuth(TokensTeste.interno());
+			return execucao.execute(requisicao, corpo);
+		}));
+	}
 
 	@Dado("que a OS {long} foi criada")
 	public void osCriada(Long osId) {

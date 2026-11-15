@@ -12,7 +12,7 @@ data:
 
   # ─── Kafka (cluster de mensageria compartilhado do ecossistema) ──
   # Ajuste para o endereço do seu broker/cluster Kafka.
-  KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka.autocenter.svc.cluster.local:9092"
 
   # ─── Logging ─────────────────────────────────────────────────────
   LOGGING_LEVEL_ROOT: "INFO"
