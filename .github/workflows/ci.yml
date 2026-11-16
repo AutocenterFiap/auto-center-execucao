@@ -3,7 +3,7 @@ name: CI — Execução da Oficina
 # Build + testes (unitários, integração com Testcontainers e BDD) + qualidade (Sonar).
 # Este workflow é o check obrigatório para merge na main (branch protegida).
 #
-# GitHub Secrets opcionais (para a análise Sonar):
+# GitHub Secrets da análise Sonar (SONAR_TOKEN obrigatório):
 #   SONAR_TOKEN     — token do SonarQube/SonarCloud
 #   SONAR_HOST_URL  — URL do servidor Sonar (ex.: https://sonarcloud.io)
 
@@ -55,7 +55,7 @@ jobs:
           mvn -B --no-transfer-progress sonar:sonar \
             -Dsonar.host.url="${SONAR_HOST_URL:-https://sonarcloud.io}" \
             -Dsonar.token="${SONAR_TOKEN}" \
-            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.wait=${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
 
       - name: Publicar relatório de testes (Surefire)
         if: always()
