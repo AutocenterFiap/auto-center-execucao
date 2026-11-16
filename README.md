@@ -136,8 +136,15 @@ make verify   # testes + gate de cobertura (mínimo 80%)
 
 Pipelines independentes em GitHub Actions (`.github/workflows/`):
 
-- **`ci.yml`** — em PRs e pushes: build → testes (unitários + integração/BDD com Testcontainers) → qualidade (SonarQube). É o check obrigatório para merge na `main`.
-- **`cd.yml`** — em push na `main`: build e push da imagem para o **GHCR** → deploy no cluster kind (`kind-autocenter`) pelo runner self-hosted: build local, `kind load`, Secret a partir dos GitHub Secrets e `kubectl apply -k` com a imagem do commit. No cluster, o Kafka compartilhado fica no namespace `autocenter` (`kafka.autocenter.svc.cluster.local:9092`).
+- **`ci.yml`** — em PRs e pushes: build → testes (unitários + integração/BDD com Testcontainers) → qualidade (SonarCloud). É o check obrigatório para merge na `main` e na `homologacao`. Em push na `main` ou na `homologacao`, o job `deploy` roda depois do build e do Quality Gate, no runner self-hosted, com [`scripts/deploy-kind.sh`](scripts/deploy-kind.sh): build local, `kind load`, Secret a partir dos GitHub Secrets e `kubectl apply -k` com a imagem do commit. No cluster, o Kafka compartilhado fica no namespace `autocenter` (`kafka.autocenter.svc.cluster.local:9092`).
+- **`cd.yml`** — em push na `main`: build e push da imagem para o **GHCR**.
+
+Ambientes (os secrets do environment têm prioridade sobre os do repositório):
+
+| Branch | Cluster kind | GitHub Environment |
+|---|---|---|
+| `main` | `autocenter` (`kind-autocenter`) | `producao` |
+| `homologacao` | `autocenter-qa` (`kind-autocenter-qa`) | `homologacao` |
 
 Manifestos Kubernetes e instruções de deploy em [`k8s/`](k8s/README.md).
 
