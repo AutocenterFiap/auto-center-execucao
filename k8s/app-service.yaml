@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: auto-center-execucao-service
+  namespace: auto-center-execucao
+  labels:
+    app: auto-center-execucao
+    component: api
+spec:
+  # NodePort expõe no host via <IP-do-nó>:30098 (use LoadBalancer na cloud)
+  type: NodePort
+  selector:
+    app: auto-center-execucao
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8098
+      nodePort: 30098   # acesse em http://localhost:30098
+      protocol: TCP

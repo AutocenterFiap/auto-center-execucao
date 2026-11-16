@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: auto-center-execucao
+
+resources:
+  # 1. Namespace (aplicado primeiro)
+  - namespace.yaml
+  # 2. Configuração
+  # secret.example.yaml NAO entra aqui: o Secret real é criado pelo
+  # pipeline CI/CD via 'kubectl create secret generic' e nao é versionado.
+  - configmap.yaml
+  # 3. Banco de dados NoSQL (MongoDB)
+  - mongodb-service.yaml
+  - mongodb-statefulset.yaml
+  # 4. Aplicação
+  - app-deployment.yaml
+  - app-service.yaml
+  # 5. Autoscaling
+  - hpa.yaml
+
+labels:
+  - pairs:
+      managed-by: kustomize
+      project: auto-center-execucao
+    includeSelectors: false
+    includeTemplates: true

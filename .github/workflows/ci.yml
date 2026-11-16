@@ -1,0 +1,105 @@
+name: CI — Execução da Oficina
+
+# Build + testes (unitários, integração com Testcontainers e BDD) + qualidade (Sonar) + deploy.
+# Este workflow é o check obrigatório para merge na main (branch protegida).
+#
+# Deploy (somente em push, depois do build e do Quality Gate):
+#   main        -> cluster kind autocenter    (environment producao)
+#   homologacao -> cluster kind autocenter-qa (environment homologacao)
+# Roda no runner self-hosted da maquina dos clusters, via scripts/deploy-kind.sh.
+#
+# GitHub Secrets:
+#   SONAR_TOKEN (obrigatorio) e SONAR_HOST_URL (opcional, padrao https://sonarcloud.io)
+#   Deploy (no repositorio ou no environment, que tem prioridade):
+#     SISTEMA_SEGURANCA_CHAVE_SECRETA, MONGO_INITDB_ROOT_USERNAME, MONGO_INITDB_ROOT_PASSWORD, MONGODB_URI
+
+on:
+  push:
+    branches:
+      - main
+      - homologacao
+      - 'feature/**'
+      - 'fix/**'
+  pull_request:
+    branches:
+      - main
+      - homologacao
+
+env:
+  JAVA_VERSION: '21'
+
+jobs:
+  build-and-test:
+    name: 🔨 Build, Testes e Qualidade
+    runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # histórico completo melhora a análise do Sonar
+
+      - name: Configurar Java ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Build e testes (Maven + JaCoCo)
+        # O runner ubuntu-latest tem Docker: os testes de integração/BDD
+        # com Testcontainers (Mongo + Kafka) rodam normalmente.
+        run: mvn -B --no-transfer-progress clean verify
+
+      - name: Análise de qualidade (SonarQube)
+        run: |
+          if [ -z "${SONAR_TOKEN}" ]; then
+            echo "::error::Secret SONAR_TOKEN nao configurado: a analise de qualidade e obrigatoria."
+            exit 1
+          fi
+          mvn -B --no-transfer-progress sonar:sonar \
+            -Dsonar.host.url="${SONAR_HOST_URL:-https://sonarcloud.io}" \
+            -Dsonar.token="${SONAR_TOKEN}" \
+            -Dsonar.qualitygate.wait=${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
+
+      - name: Publicar relatório de testes (Surefire)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports/
+          retention-days: 7
+
+      - name: Publicar relatório de cobertura (JaCoCo)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: target/site/jacoco/
+          retention-days: 7
+
+  deploy:
+    name: 🚀 Deploy no kind (${{ github.ref_name }})
+    needs: build-and-test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/homologacao')
+    runs-on: self-hosted
+    environment: ${{ github.ref_name == 'main' && 'producao' || 'homologacao' }}
+    concurrency:
+      group: deploy-auto-center-execucao-${{ github.ref_name }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Build, kind load, Secret e apply com a imagem do commit
+        env:
+          KIND_CLUSTER: ${{ github.ref_name == 'main' && 'autocenter' || 'autocenter-qa' }}
+          SISTEMA_SEGURANCA_CHAVE_SECRETA: ${{ secrets.SISTEMA_SEGURANCA_CHAVE_SECRETA }}
+          MONGO_INITDB_ROOT_USERNAME: ${{ secrets.MONGO_INITDB_ROOT_USERNAME }}
+          MONGO_INITDB_ROOT_PASSWORD: ${{ secrets.MONGO_INITDB_ROOT_PASSWORD }}
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: ./scripts/deploy-kind.sh "${KIND_CLUSTER}" "${{ github.sha }}"

@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: execucao-configmap
+  namespace: auto-center-execucao
+  labels:
+    app: auto-center-execucao
+data:
+  # ─── Aplicação ───────────────────────────────────────────────────
+  SPRING_PROFILES_ACTIVE: "prod"
+  SERVER_PORT: "8098"
+
+  # ─── Kafka (cluster de mensageria compartilhado do ecossistema) ──
+  # Ajuste para o endereço do seu broker/cluster Kafka.
+  KAFKA_BOOTSTRAP_SERVERS: "kafka.autocenter.svc.cluster.local:9092"
+
+  # ─── Logging ─────────────────────────────────────────────────────
+  LOGGING_LEVEL_ROOT: "INFO"
+  LOGGING_LEVEL_BR_COM_AUTOCENTERFIAP: "INFO"

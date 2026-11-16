@@ -3,29 +3,30 @@ package br.com.autocenterfiap.execucao.domain.enums;
 import java.util.Set;
 
 /**
- * Estados possiveis de uma execucao na oficina.
+ * Estados possiveis de uma execucao na oficina (contrato da Saga orquestrada).
  *
  * <p>Fluxo esperado:
- * {@code NA_FILA -> EM_DIAGNOSTICO -> EM_EXECUCAO -> FINALIZADA}, com {@code FALHA}
- * como estado terminal de compensacao a partir de qualquer etapa ativa.
+ * {@code NA_FILA -> EM_DIAGNOSTICO -> DIAGNOSTICO_CONCLUIDO -> EM_EXECUCAO -> FINALIZADA}.
+ * {@code FALHA} (reparo falhou) e {@code CANCELADA} (OS cancelada) sao terminais de
+ * compensacao a partir dos estados ativos.
  */
 public enum StatusExecucao {
 
 	NA_FILA,
 	EM_DIAGNOSTICO,
+	DIAGNOSTICO_CONCLUIDO,
 	EM_EXECUCAO,
 	FINALIZADA,
-	FALHA;
+	FALHA,
+	CANCELADA;
 
-	/**
-	 * Retorna os estados para os quais este estado pode transitar.
-	 */
 	public Set<StatusExecucao> transicoesValidas() {
 		return switch (this) {
-			case NA_FILA -> Set.of(EM_DIAGNOSTICO, FALHA);
-			case EM_DIAGNOSTICO -> Set.of(EM_EXECUCAO, FALHA);
-			case EM_EXECUCAO -> Set.of(FINALIZADA, FALHA);
-			case FINALIZADA, FALHA -> Set.of();
+			case NA_FILA -> Set.of(EM_DIAGNOSTICO, CANCELADA);
+			case EM_DIAGNOSTICO -> Set.of(DIAGNOSTICO_CONCLUIDO, CANCELADA);
+			case DIAGNOSTICO_CONCLUIDO -> Set.of(EM_EXECUCAO, CANCELADA);
+			case EM_EXECUCAO -> Set.of(FINALIZADA, FALHA, CANCELADA);
+			case FINALIZADA, FALHA, CANCELADA -> Set.of();
 		};
 	}
 
@@ -34,6 +35,6 @@ public enum StatusExecucao {
 	}
 
 	public boolean ehTerminal() {
-		return this == FINALIZADA || this == FALHA;
+		return this == FINALIZADA || this == FALHA || this == CANCELADA;
 	}
 }

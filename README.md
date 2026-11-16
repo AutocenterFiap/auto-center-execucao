@@ -4,13 +4,16 @@ Microsserviço responsável pela **fila de serviços da oficina**: controla o di
 início e a finalização dos reparos. Faz parte do ecossistema de microsserviços do Tech
 Challenge SOAT **Fase 4**.
 
-- Consome o evento `pagamento.confirmado` (do serviço de Orçamento e Pagamento) e coloca a
-  Ordem de Serviço (OS) na fila de execução.
-- As etapas (diagnóstico, reparo, finalização) são avançadas via **endpoints REST** pela
-  oficina.
-- Ao finalizar, publica `execucao.finalizada` para o serviço de Ordem de Serviço concluir a OS.
-- Em falha irreversível, publica `execucao.falhou` para a compensação da Saga.
-- Usa **MongoDB (NoSQL)** para guardar o histórico de etapas e eventos operacionais.
+- Faz parte do ecossistema do Tech Challenge SOAT **Fase 4**, com saga **orquestrada pelo
+  serviço de Ordem de Serviço (OS Service)**.
+- Ao receber `os.criada`, coloca a OS na fila e **conduz o diagnóstico**, publicando
+  `diagnostico.iniciado` e, com os itens informados pela oficina, `diagnostico.concluido`.
+- Ao receber `execucao.iniciar-reparo` (após o pagamento confirmado), inicia o reparo
+  (`execucao.iniciada`).
+- A oficina registra o resultado do diagnóstico, a finalização e a falha via **endpoints REST**.
+- Ao finalizar publica `execucao.finalizada`; em falha, `execucao.falhou` (compensação).
+  O evento `os.cancelada` cancela a execução.
+- Usa **MongoDB (NoSQL)** para o histórico de etapas e a deduplicação de eventos.
 
 ---
 
@@ -28,39 +31,62 @@ infrastructure/   # Configuração (Spring, Kafka, Mongo, observabilidade)
 ### Máquina de estados da execução
 
 ```
-NA_FILA → EM_DIAGNOSTICO → EM_EXECUCAO → FINALIZADA
-   └──────────┴──────────────┴──────────→ FALHA   (compensação)
+NA_FILA → EM_DIAGNOSTICO → DIAGNOSTICO_CONCLUIDO → EM_EXECUCAO → FINALIZADA
+   └──────────┴────────────────────┴──────────────────┴───────→ FALHA | CANCELADA
 ```
 
 ---
 
 ## Saga Pattern
 
-A Saga do ecossistema é **orquestrada pelo serviço de Ordem de Serviço**. Este serviço atua
-de forma **coreografada**: reage a eventos recebidos e publica eventos de resultado, sem
-orquestrar outros serviços. A escolha (orquestração no OS Service) é justificada pela
-necessidade de um ponto único que acompanhe todo o ciclo da OS (criação → orçamento →
-pagamento → execução) e dispare compensações.
+A Saga é **orquestrada pelo serviço de Ordem de Serviço (OS Service)**, que acompanha todo o
+ciclo da OS e dispara as compensações. Os demais serviços — este incluso — participam de forma
+coreografada: reagem a comandos/eventos e publicam eventos de resultado.
 
-### Tópicos Kafka do ecossistema
+Todas as mensagens usam um **envelope padrão** (chave Kafka = `osId`):
 
-| Tópico | Produtor | Consumidor(es) | Papel |
-|--------|----------|----------------|-------|
-| `os.criada` | Ordem de Serviço | Orçamento/Pagamento | Happy path |
-| `orcamento.gerado` | Orçamento/Pagamento | Ordem de Serviço | Tracking |
-| `orcamento.aprovado` | Orçamento/Pagamento | Ordem de Serviço | Happy path |
-| `orcamento.reprovado` | Orçamento/Pagamento | Ordem de Serviço | Compensação |
-| `pagamento.confirmado` | Orçamento/Pagamento | **Execução**, Ordem de Serviço | Libera execução |
-| `pagamento.recusado` | Orçamento/Pagamento | Ordem de Serviço | Compensação |
-| `execucao.iniciada` | **Execução** | Ordem de Serviço | Tracking |
-| `execucao.finalizada` | **Execução** | Ordem de Serviço | Conclui a OS |
-| `execucao.falhou` | **Execução** | Ordem de Serviço | Compensação |
+```json
+{ "eventId": "...", "tipo": "os.criada", "versao": 1, "osId": 123,
+  "correlationId": "...", "ocorridoEm": "2026-01-01T00:00:00Z", "payload": {} }
+```
 
-**Convenções:** chave de partição = `osId`; para cada tópico consumido há `<tópico>.retry`
-e `<tópico>.DLT` (dead-letter) para tolerância a falhas.
+- `eventId` deduplica mensagens repetidas (idempotência, coleção `eventos_processados`);
+- valores monetários são strings com 2 casas (`"120.00"`);
+- consumidores ignoram campos desconhecidos.
 
-**Este serviço** consome `pagamento.confirmado` e publica `execucao.iniciada`,
-`execucao.finalizada` e `execucao.falhou`.
+### Tópicos deste serviço
+
+| Direção | Tópico | Tipos (`tipo`) |
+|---------|--------|----------------|
+| Consome | `os.eventos` | `os.criada`, `os.cancelada` |
+| Consome | `execucao.comandos` | `execucao.iniciar-reparo` |
+| Publica | `execucao.eventos` | `diagnostico.iniciado`, `diagnostico.concluido`, `execucao.iniciada`, `execucao.finalizada`, `execucao.falhou` |
+
+Erro técnico tem 3 retentativas bloqueantes (1 s, 2 s, 4 s), que preservam a ordem das mensagens de cada OS; depois a mensagem vai para `<tópico>.dlt` (mesma partição: `os.eventos.dlt` e `execucao.comandos.dlt`). JSON inválido vai direto para a DLT.
+
+### Fluxo principal
+
+```
+os.criada → (Execução) diagnostico.iniciado → diagnostico.concluido(itens)
+  → OS gera orçamento/cobrança → pagamento.confirmado
+  → OS envia execucao.iniciar-reparo → (Execução) execucao.iniciada → execucao.finalizada
+```
+
+Compensações: `execucao.falhou` (OS pede estorno) e `os.cancelada` (cancela a execução).
+
+## API REST
+
+- `GET  /execucoes/fila` — fila de execuções ativas.
+- `GET  /execucoes/os/{osId}` — consulta a execução de uma OS.
+- `POST /execucoes/{osId}/diagnostico` — conclui o diagnóstico com os itens (publica `diagnostico.concluido`).
+- `POST /execucoes/{osId}/finalizacao` — finaliza o reparo (publica `execucao.finalizada`).
+- `POST /execucoes/{osId}/falha` — registra falha (publica `execucao.falhou`).
+
+O início do diagnóstico (em `os.criada`) e do reparo (em `execucao.iniciar-reparo`) são automáticos.
+
+As rotas `/execucoes/**` exigem `Authorization: Bearer <jwt>` (HS256, issuer `Auto Center Fiap`, com `exp`), o mesmo token do OS Service. O segredo vem de `SISTEMA_SEGURANCA_CHAVE_SECRETA`, sem valor padrão.
+
+No diagnóstico, cada serviço exige `servicoId`, `descricao` e `valor`, e cada produto exige `produtoId`, `descricao`, `quantidade` maior que zero e `precoUnitario`, como no contrato da Saga. Listas vazias são aceitas e levam o OS Service a cancelar a OS.
 
 ---
 
@@ -108,20 +134,46 @@ make verify   # testes + gate de cobertura (mínimo 80%)
 
 ## CI/CD e Kubernetes
 
-- Pipeline independente (build → testes → qualidade/Sonar → imagem → deploy K8s).
-- Branch `main` protegida (PR obrigatório + checagens).
-- Manifestos Kubernetes e deploy automatizado em `k8s/` (a adicionar).
+Pipelines independentes em GitHub Actions (`.github/workflows/`):
+
+- **`ci.yml`** — em PRs e pushes: build → testes (unitários + integração/BDD com Testcontainers) → qualidade (SonarCloud). É o check obrigatório para merge na `main` e na `homologacao`. Em push na `main` ou na `homologacao`, o job `deploy` roda depois do build e do Quality Gate, no runner self-hosted, com [`scripts/deploy-kind.sh`](scripts/deploy-kind.sh): build local, `kind load`, Secret a partir dos GitHub Secrets e `kubectl apply -k` com a imagem do commit. No cluster, o Kafka compartilhado fica no namespace `autocenter` (`kafka.autocenter.svc.cluster.local:9092`).
+- **`cd.yml`** — em push na `main`: build e push da imagem para o **GHCR**.
+
+Ambientes (os secrets do environment têm prioridade sobre os do repositório):
+
+| Branch | Cluster kind | GitHub Environment |
+|---|---|---|
+| `main` | `autocenter` (`kind-autocenter`) | `producao` |
+| `homologacao` | `autocenter-qa` (`kind-autocenter-qa`) | `homologacao` |
+
+Manifestos Kubernetes e instruções de deploy em [`k8s/`](k8s/README.md).
+
+### Proteção da branch `main`
+
+Configurar em **Settings → Branches → Branch protection rules** para `main`:
+- Require a pull request before merging (≥1 aprovação);
+- Require status checks to pass → selecionar **`🔨 Build, Testes e Qualidade`** (job do `ci.yml`);
+- Require branches to be up to date before merging.
+
+### Secrets usados nos workflows
+
+| Secret | Uso |
+|--------|-----|
+| `SONAR_TOKEN`, `SONAR_HOST_URL` | Análise SonarQube no CI (obrigatória: sem token o job falha) |
+| `SISTEMA_SEGURANCA_CHAVE_SECRETA` | Segredo HS256 do JWT, o mesmo do OS Service (deploy) |
+| `MONGO_INITDB_ROOT_USERNAME`, `MONGO_INITDB_ROOT_PASSWORD`, `MONGODB_URI` | Credenciais do MongoDB (deploy) |
 
 ---
 
 ## Status do desenvolvimento
 
 - [x] Bootstrap do projeto (estrutura, build, config, observabilidade)
-- [ ] Domínio (Execucao, EventoOperacional, transições)
-- [ ] Casos de uso e ports
-- [ ] Persistência MongoDB
-- [ ] Consumer `pagamento.confirmado` + producers de eventos
-- [ ] Endpoints REST (fila, avanço de etapas, consulta)
-- [ ] Testes unitários + BDD + cobertura ≥80%
-- [ ] Dockerfile + manifestos Kubernetes
-- [ ] Pipeline CI/CD + Sonar
+- [x] Domínio (Execucao, EventoOperacional, transições)
+- [x] Casos de uso e ports
+- [x] Persistência MongoDB
+- [x] Consumers (`os.eventos`, `execucao.comandos`) + publisher (`execucao.eventos`) com envelope e dedup
+- [x] Endpoints REST (fila, consulta, concluir diagnóstico, finalizar, falha)
+- [x] Testes unitários + BDD + cobertura ≥80% (atual: 93,2%)
+- [x] Dockerfile + manifestos Kubernetes
+- [x] Pipeline CI/CD + Sonar
+- [x] Migração para o novo contrato Kafka (saga orquestrada, tópicos consolidados)
