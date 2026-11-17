@@ -1,5 +1,9 @@
 package br.com.autocenterfiap.execucao.bdd;
 
+import br.com.autocenterfiap.execucao.application.port.out.CatalogoPort;
+import java.math.BigDecimal;
+import static org.mockito.Mockito.when;
+
 import br.com.autocenterfiap.execucao.adapter.messaging.contract.EventoEnvelope;
 import br.com.autocenterfiap.execucao.adapter.messaging.contract.ExecucaoPayloads;
 import br.com.autocenterfiap.execucao.adapter.messaging.contract.ItensContrato;
@@ -36,6 +40,8 @@ public class ExecucaoSteps {
 	private ExecutionEventCollector collector;
 	@Autowired
 	private ObjectMapper objectMapper;
+	@Autowired
+	private CatalogoPort catalogo;
 	@Value("${execucao.kafka.topics.os-eventos}")
 	private String topicoOsEventos;
 	@Value("${execucao.kafka.topics.execucao-comandos}")
@@ -59,7 +65,9 @@ public class ExecucaoSteps {
 
 	@Quando("a oficina conclui o diagnostico da OS {long}")
 	public void concluiDiagnostico(Long osId) {
-		String body = "{\"servicos\":[{\"servicoId\":1,\"descricao\":\"Troca\",\"valor\":120.00}],\"produtos\":[]}";
+		when(catalogo.buscarServico(1L))
+				.thenReturn(new CatalogoPort.ServicoCatalogo(1L, "Troca", new BigDecimal("120.00"), true));
+		String body = "{\"servicos\":[{\"servicoId\":1}],\"produtos\":[]}";
 		ResponseEntity<String> r = rest.postForEntity(
 				"/execucoes/" + osId + "/diagnostico", jsonEntity(body), String.class);
 		assertEquals(HttpStatus.OK, r.getStatusCode());

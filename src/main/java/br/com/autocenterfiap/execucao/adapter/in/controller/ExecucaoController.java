@@ -5,6 +5,7 @@ import br.com.autocenterfiap.execucao.adapter.in.dto.FalhaRequest;
 import br.com.autocenterfiap.execucao.adapter.in.dto.ItensRequest;
 import br.com.autocenterfiap.execucao.application.port.in.ConsultarExecucaoUseCase;
 import br.com.autocenterfiap.execucao.application.port.in.GerenciarExecucaoUseCase;
+import br.com.autocenterfiap.execucao.application.usecase.MontarItensCatalogoService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -28,10 +29,13 @@ public class ExecucaoController {
 
 	private final GerenciarExecucaoUseCase gerenciar;
 	private final ConsultarExecucaoUseCase consultar;
+	private final MontarItensCatalogoService montarItens;
 
-	public ExecucaoController(GerenciarExecucaoUseCase gerenciar, ConsultarExecucaoUseCase consultar) {
+	public ExecucaoController(GerenciarExecucaoUseCase gerenciar, ConsultarExecucaoUseCase consultar,
+	                          MontarItensCatalogoService montarItens) {
 		this.gerenciar = gerenciar;
 		this.consultar = consultar;
+		this.montarItens = montarItens;
 	}
 
 	@GetMapping("/os/{osId}")
@@ -47,10 +51,12 @@ public class ExecucaoController {
 	}
 
 	@PostMapping("/{osId}/diagnostico")
-	@Operation(summary = "Conclui o diagnostico com os itens e publica diagnostico.concluido")
+	@Operation(summary = "Conclui o diagnostico com os itens e publica diagnostico.concluido",
+			description = "Recebe so IDs (e quantidade de produtos); descricao e preco vem do Cadastro. "
+					+ "Item inexistente ou inativo: 422. Cadastro indisponivel: 503. Em erro nada e publicado.")
 	public ExecucaoResponse concluirDiagnostico(@PathVariable Long osId,
 	                                            @Valid @RequestBody ItensRequest request) {
-		return ExecucaoResponse.de(gerenciar.concluirDiagnostico(osId, request.toDomain()));
+		return ExecucaoResponse.de(gerenciar.concluirDiagnostico(osId, montarItens.montar(request.toSolicitados())));
 	}
 
 	@PostMapping("/{osId}/finalizacao")

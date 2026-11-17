@@ -14,6 +14,9 @@ data:
   # Ajuste para o endereço do seu broker/cluster Kafka.
   KAFKA_BOOTSTRAP_SERVERS: "kafka.autocenter.svc.cluster.local:9092"
 
+  # ─── Cadastro Service (outro namespace: usar o nome completo) ────
+  CADASTRO_URL: "http://cadastro-service.autocenter.svc.cluster.local:8097"
+
   # ─── Logging ─────────────────────────────────────────────────────
   LOGGING_LEVEL_ROOT: "INFO"
   LOGGING_LEVEL_BR_COM_AUTOCENTERFIAP: "INFO"

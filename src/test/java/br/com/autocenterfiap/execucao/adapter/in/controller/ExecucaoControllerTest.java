@@ -1,6 +1,20 @@
 package br.com.autocenterfiap.execucao.adapter.in.controller;
 
 import br.com.autocenterfiap.execucao.application.exception.ExecucaoNaoEncontradaException;
+import br.com.autocenterfiap.execucao.application.exception.CatalogoIndisponivelException;
+import br.com.autocenterfiap.execucao.application.exception.ItemCatalogoInvalidoException;
+import br.com.autocenterfiap.execucao.application.port.out.CatalogoPort;
+import br.com.autocenterfiap.execucao.application.port.out.CatalogoPort.ProdutoCatalogo;
+import br.com.autocenterfiap.execucao.application.port.out.CatalogoPort.ServicoCatalogo;
+import br.com.autocenterfiap.execucao.application.usecase.MontarItensCatalogoService;
+import org.mockito.ArgumentCaptor;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import java.math.BigDecimal;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import br.com.autocenterfiap.execucao.application.port.in.ConsultarExecucaoUseCase;
 import br.com.autocenterfiap.execucao.application.port.in.GerenciarExecucaoUseCase;
 import br.com.autocenterfiap.execucao.domain.entity.Execucao;
@@ -27,7 +41,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest(ExecucaoController.class)
 @AutoConfigureMockMvc(addFilters = false)
+@Import(ExecucaoControllerTest.Config.class)
 class ExecucaoControllerTest {
+
+	@TestConfiguration
+	static class Config {
+		@Bean
+		MontarItensCatalogoService montarItensCatalogoService(CatalogoPort catalogo) {
+			return new MontarItensCatalogoService(catalogo);
+		}
+	}
 
 	@Autowired
 	MockMvc mockMvc;
@@ -35,6 +58,8 @@ class ExecucaoControllerTest {
 	GerenciarExecucaoUseCase gerenciar;
 	@MockBean
 	ConsultarExecucaoUseCase consultar;
+	@MockBean
+	CatalogoPort catalogo;
 
 	private Execucao naFila() {
 		return Execucao.criar(123L, 1001L, 42L, 77L, "Barulho", "corr-1", 1);
@@ -84,18 +109,17 @@ class ExecucaoControllerTest {
 
 		mockMvc.perform(post("/execucoes/123/diagnostico")
 						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"servicos\":[{\"servicoId\":1,\"descricao\":\"Troca\",\"valor\":120.00}],\"produtos\":[]}"))
+						.content("{\"servicos\":[],\"produtos\":[]}"))
 				.andExpect(status().isConflict());
 	}
 
 	@Test
 	void concluirDiagnosticoComItemForaDoContratoDeveRetornar400() throws Exception {
 		String[] invalidos = {
-				"{\"servicos\":[{\"servicoId\":1,\"valor\":120.00}],\"produtos\":[]}",
-				"{\"servicos\":[{\"descricao\":\"Troca\",\"valor\":120.00}],\"produtos\":[]}",
-				"{\"servicos\":[],\"produtos\":[{\"produtoId\":7,\"descricao\":\"Filtro\",\"precoUnitario\":45.00}]}",
-				"{\"servicos\":[],\"produtos\":[{\"produtoId\":7,\"descricao\":\"Filtro\",\"quantidade\":0,\"precoUnitario\":45.00}]}",
-				"{\"servicos\":[{\"servicoId\":1,\"descricao\":\"Troca\",\"valor\":-1}],\"produtos\":[]}"
+				"{\"servicos\":[{}],\"produtos\":[]}",
+				"{\"servicos\":[],\"produtos\":[{\"produtoId\":7}]}",
+				"{\"servicos\":[],\"produtos\":[{\"quantidade\":1}]}",
+				"{\"servicos\":[],\"produtos\":[{\"produtoId\":7,\"quantidade\":0}]}"
 		};
 		for (String corpo : invalidos) {
 			mockMvc.perform(post("/execucoes/123/diagnostico")
@@ -103,6 +127,55 @@ class ExecucaoControllerTest {
 							.content(corpo))
 					.andExpect(status().isBadRequest());
 		}
+		verifyNoInteractions(catalogo, gerenciar);
+	}
+
+	@Test
+	void concluirDiagnosticoSoComIdsUsaPrecoDoCatalogo() throws Exception {
+		when(catalogo.buscarServico(1L)).thenReturn(new ServicoCatalogo(1L, "Troca de oleo", new BigDecimal("120.00"), true));
+		when(catalogo.buscarProduto(2L)).thenReturn(new ProdutoCatalogo(2L, "Oleo 5W30", new BigDecimal("45.50"), true));
+		Execucao diagnosticada = naFila();
+		diagnosticada.iniciarDiagnostico(3L);
+		when(gerenciar.concluirDiagnostico(eq(123L), any())).thenAnswer(inv -> {
+			diagnosticada.concluirDiagnostico(inv.getArgument(1));
+			return diagnosticada;
+		});
+
+		mockMvc.perform(post("/execucoes/123/diagnostico")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"servicos\":[{\"servicoId\":1,\"descricao\":\"ignorada\",\"valor\":1}],"
+								+ "\"produtos\":[{\"produtoId\":2,\"quantidade\":3}]}"))
+				.andExpect(status().isOk());
+
+		ArgumentCaptor<Itens> itens = ArgumentCaptor.forClass(Itens.class);
+		verify(gerenciar).concluirDiagnostico(eq(123L), itens.capture());
+		assertThat(itens.getValue().getServicos())
+				.containsExactly(new Itens.ItemServico(1L, "Troca de oleo", new BigDecimal("120.00")));
+		assertThat(itens.getValue().getProdutos())
+				.containsExactly(new Itens.ItemProduto(2L, "Oleo 5W30", 3, new BigDecimal("45.50")));
+	}
+
+	@Test
+	void itemInexistenteRetorna422ENaoConclui() throws Exception {
+		when(catalogo.buscarServico(9L)).thenThrow(new ItemCatalogoInvalidoException("Servico 9 nao encontrado no catalogo"));
+
+		mockMvc.perform(post("/execucoes/123/diagnostico")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"servicos\":[{\"servicoId\":9}],\"produtos\":[]}"))
+				.andExpect(status().isUnprocessableEntity())
+				.andExpect(jsonPath("$.mensagem").value("Servico 9 nao encontrado no catalogo"));
+		verifyNoInteractions(gerenciar);
+	}
+
+	@Test
+	void catalogoForaRetorna503ENaoConclui() throws Exception {
+		when(catalogo.buscarServico(1L)).thenThrow(new CatalogoIndisponivelException("fora", new RuntimeException()));
+
+		mockMvc.perform(post("/execucoes/123/diagnostico")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"servicos\":[{\"servicoId\":1}],\"produtos\":[]}"))
+				.andExpect(status().isServiceUnavailable());
+		verifyNoInteractions(gerenciar);
 	}
 
 	@Test

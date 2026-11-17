@@ -25,6 +25,10 @@ spring:
 server:
   port: ${SERVER_PORT:8098}
 
+# Cadastro Service (catalogo de servicos e produtos)
+cadastro:
+  url: ${CADASTRO_URL:http://localhost:8097}
+
 sistema:
   seguranca:
     chave:
