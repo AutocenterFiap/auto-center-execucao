@@ -1,5 +1,8 @@
 package br.com.autocenterfiap.execucao.bdd;
 
+import br.com.autocenterfiap.execucao.application.port.out.CatalogoPort;
+import org.springframework.boot.test.mock.mockito.MockBean;
+
 import io.cucumber.spring.CucumberContextConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -17,6 +20,10 @@ import static org.springframework.boot.test.context.SpringBootTest.WebEnvironmen
 @CucumberContextConfiguration
 @SpringBootTest(webEnvironment = RANDOM_PORT)
 public class CucumberSpringConfiguration {
+
+	/** O Cadastro nao roda nos cenarios BDD: o catalogo e um duble configurado nos passos. */
+	@MockBean
+	CatalogoPort catalogo;
 
 	static final MongoDBContainer MONGO = new MongoDBContainer("mongo:7");
 	static final KafkaContainer KAFKA =

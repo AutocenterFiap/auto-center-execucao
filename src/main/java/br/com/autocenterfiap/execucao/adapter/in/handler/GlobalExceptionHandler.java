@@ -1,6 +1,8 @@
 package br.com.autocenterfiap.execucao.adapter.in.handler;
 
+import br.com.autocenterfiap.execucao.application.exception.CatalogoIndisponivelException;
 import br.com.autocenterfiap.execucao.application.exception.ExecucaoNaoEncontradaException;
+import br.com.autocenterfiap.execucao.application.exception.ItemCatalogoInvalidoException;
 import br.com.autocenterfiap.execucao.domain.exception.ExecucaoInvalidaException;
 import br.com.autocenterfiap.execucao.domain.exception.TransicaoInvalidaException;
 import org.springframework.http.HttpStatus;
@@ -25,6 +27,16 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(ExecucaoInvalidaException.class)
 	public ResponseEntity<ErroResponse> execucaoInvalida(ExecucaoInvalidaException ex) {
 		return build(HttpStatus.BAD_REQUEST, ex.getMessage());
+	}
+
+	@ExceptionHandler(ItemCatalogoInvalidoException.class)
+	public ResponseEntity<ErroResponse> itemCatalogoInvalido(ItemCatalogoInvalidoException ex) {
+		return build(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+	}
+
+	@ExceptionHandler(CatalogoIndisponivelException.class)
+	public ResponseEntity<ErroResponse> catalogoIndisponivel(CatalogoIndisponivelException ex) {
+		return build(HttpStatus.SERVICE_UNAVAILABLE, "Cadastro indisponivel; tente novamente em instantes");
 	}
 
 	@ExceptionHandler(MethodArgumentNotValidException.class)

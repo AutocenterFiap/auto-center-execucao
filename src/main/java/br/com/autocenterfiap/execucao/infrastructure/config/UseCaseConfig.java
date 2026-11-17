@@ -12,6 +12,8 @@ import br.com.autocenterfiap.execucao.application.usecase.ConsultarExecucaoServi
 import br.com.autocenterfiap.execucao.application.usecase.GerenciarExecucaoService;
 import br.com.autocenterfiap.execucao.application.usecase.IniciarReparoService;
 import br.com.autocenterfiap.execucao.application.usecase.ProcessarOsCriadaService;
+import br.com.autocenterfiap.execucao.application.port.out.CatalogoPort;
+import br.com.autocenterfiap.execucao.application.usecase.MontarItensCatalogoService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -42,6 +44,11 @@ public class UseCaseConfig {
 	@Bean
 	public CancelarExecucaoUseCase cancelarExecucaoUseCase(ExecucaoRepositoryPort repository) {
 		return new CancelarExecucaoService(repository);
+	}
+
+	@Bean
+	public MontarItensCatalogoService montarItensCatalogoService(CatalogoPort catalogo) {
+		return new MontarItensCatalogoService(catalogo);
 	}
 
 	@Bean
