@@ -98,6 +98,7 @@ No diagnóstico, cada serviço exige `servicoId`, `descricao` e `valor`, e cada 
 - MapStruct, Lombok
 - springdoc-openapi (Swagger)
 - Actuator + Micrometer/Prometheus + logs JSON (Datadog) — observabilidade da Fase 3
+- Dashboards do Datadog versionados em [`/docs`](./docs/) — arquivos `.json` importáveis diretamente na plataforma Datadog
 - Testes: JUnit, Testcontainers (Mongo + Kafka), Cucumber (BDD), JaCoCo (gate 80%)
 
 ---
