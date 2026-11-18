@@ -98,6 +98,7 @@ No diagnóstico, cada serviço exige `servicoId`, `descricao` e `valor`, e cada 
 - MapStruct, Lombok
 - springdoc-openapi (Swagger)
 - Actuator + Micrometer/Prometheus + logs JSON (Datadog) — observabilidade da Fase 3
+- Dashboards do Datadog versionados em [`/docs`](./docs/) — arquivos `.json` importáveis diretamente na plataforma Datadog
 - Testes: JUnit, Testcontainers (Mongo + Kafka), Cucumber (BDD), JaCoCo (gate 80%)
 
 ---
@@ -123,12 +124,28 @@ Variáveis de ambiente relevantes: `MONGODB_URI`, `KAFKA_BOOTSTRAP_SERVERS`, `SE
 
 ---
 
-## Testes
+## Testes e cobertura
 
 ```bash
 make test     # unitários + relatório de cobertura
 make verify   # testes + gate de cobertura (mínimo 80%)
 ```
+
+- **Unitários** (Surefire): domínio, entidade, máquina de estados, casos de uso, controllers, consumers e adapters.
+- **Integração** (Testcontainers com MongoDB e Kafka reais): persistência e fluxo de mensagens.
+- **BDD** (Cucumber): cenários de execução da OS, incluindo fluxo completo, cancelamento e consulta.
+- **Gate:** o build falha com menos de 80% de cobertura de linhas (JaCoCo).
+
+**Evidência** (`make verify`, 18/11/2026, BUILD SUCCESS):
+
+| Métrica | Cobertas / total | % |
+|---|---|---|
+| Linhas | 414 / 428 | 96,7 |
+| Branches | 48 / 63 | 76,2 |
+| Instruções | 1838 / 1926 | 95,4 |
+| Métodos | 128 / 133 | 96,2 |
+
+Testes: 68, todos passando. Relatório HTML em `target/site/jacoco/index.html`, publicado como artefato `jacoco-report` em cada execução do pipeline.
 
 ---
 
